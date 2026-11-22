@@ -1,10 +1,12 @@
-import express, { Express, Request, Response } from 'express';
+import express, { Express, NextFunction, Request, Response } from 'express';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
-import Parser from 'rss-parser';
-import defaultSourcesCatalog from '../data/sources.json';
+import ParserMod from 'rss-parser';
+import { DEFAULT_SOURCES_CATALOG } from '../data/sourcesCatalog.js';
+
+const Parser: typeof ParserMod = (ParserMod as any).default || ParserMod;
 
 export interface SourceItem {
   id: string;
@@ -78,7 +80,7 @@ function resolveDbFile(): string {
 const DB_FILE = resolveDbFile();
 
 function loadInitialSources(): SourceItem[] {
-  return (defaultSourcesCatalog as any[]).map((s) => ({
+  return DEFAULT_SOURCES_CATALOG.map((s) => ({
     id: String(s.id),
     name: String(s.name),
     url: String(s.url),
@@ -108,7 +110,10 @@ function ensureStoreLoaded() {
     try {
       const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
       store = {
-        sources: Array.isArray(data.sources) && data.sources.length > 0 ? data.sources : loadInitialSources(),
+        sources:
+          Array.isArray(data.sources) && data.sources.length > 0
+            ? data.sources
+            : loadInitialSources(),
         articles: Array.isArray(data.articles) ? data.articles : [],
         logs: Array.isArray(data.logs) ? data.logs : [],
         lastSyncAt: data.lastSyncAt || null,
@@ -206,7 +211,7 @@ async function fetchSource(
       const link = (entry.link || '').trim();
       if (!title || !link) continue;
 
-      const rawSummary = entry.summary || entry.description || entry.content || '';
+      const rawSummary = (entry as any).summary || (entry as any).description || entry.content || '';
       const summary = cleanSummary(rawSummary);
 
       const dateVal = entry.isoDate || entry.pubDate || new Date().toISOString();
@@ -241,7 +246,10 @@ async function fetchSource(
       success: false,
       articles: [],
       latencyMs: Date.now() - startTime,
-      error: err?.name === 'TimeoutError' ? `Timeout (${(timeoutMs / 1000).toFixed(1)}s)` : err?.message || 'Network error',
+      error:
+        err?.name === 'TimeoutError'
+          ? `Timeout (${(timeoutMs / 1000).toFixed(1)}s)`
+          : err?.message || 'Network error',
     };
   }
 }
@@ -258,9 +266,9 @@ export async function runIngestionCycle(triggeredBy = 'AUTO_SCHEDULER') {
   store.isSyncing = true;
   const cycleStart = Date.now();
   const isFastServerless = isServerlessRuntime;
-  const fetchTimeoutMs = isFastServerless ? 3200 : 4500;
-  const concurrency = isFastServerless ? 25 : 12;
-  const maxCycleMs = isFastServerless ? 7000 : 60000;
+  const fetchTimeoutMs = isFastServerless ? 2600 : 4500;
+  const concurrency = isFastServerless ? 28 : 12;
+  const maxCycleMs = isFastServerless ? 4500 : 60000;
 
   inflightSync = (async () => {
     console.log(`[VEDA] Memulai siklus pengambilan (${triggeredBy}). Total sumber: ${store.sources.length}`);
@@ -435,183 +443,216 @@ export function createVedaApiApp(options?: { standalone?: boolean }): Express {
   });
 
   // 1. GET /api/articles
-  app.get('/api/articles', async (req: Request, res: Response) => {
-    await ensureFreshForServerless();
-    const { category, source, search, limit = '50', offset = '0' } = req.query;
-    const numLimit = Math.min(Math.max(parseInt(limit as string, 10) || 50, 1), 200);
-    const numOffset = Math.max(parseInt(offset as string, 10) || 0, 0);
+  app.get('/api/articles', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await ensureFreshForServerless();
+      const { category, source, search, limit = '50', offset = '0' } = req.query;
+      const numLimit = Math.min(Math.max(parseInt(limit as string, 10) || 50, 1), 200);
+      const numOffset = Math.max(parseInt(offset as string, 10) || 0, 0);
 
-    let filtered = store.articles;
+      let filtered = store.articles;
 
-    if (category && category !== 'all') {
-      filtered = filtered.filter((a) => a.category.toLowerCase() === (category as string).toLowerCase());
+      if (category && category !== 'all') {
+        filtered = filtered.filter((a) => a.category.toLowerCase() === (category as string).toLowerCase());
+      }
+
+      if (source && source !== 'all') {
+        filtered = filtered.filter((a) => a.sourceId === source);
+      }
+
+      if (search && typeof search === 'string') {
+        const q = search.toLowerCase().trim();
+        filtered = filtered.filter(
+          (a) =>
+            a.title.toLowerCase().includes(q) ||
+            a.summary.toLowerCase().includes(q) ||
+            a.sourceName.toLowerCase().includes(q)
+        );
+      }
+
+      const total = filtered.length;
+      const paginated = filtered.slice(numOffset, numOffset + numLimit);
+
+      res.json({
+        total,
+        offset: numOffset,
+        limit: numLimit,
+        count: paginated.length,
+        articles: paginated,
+      });
+    } catch (err) {
+      next(err);
     }
-
-    if (source && source !== 'all') {
-      filtered = filtered.filter((a) => a.sourceId === source);
-    }
-
-    if (search && typeof search === 'string') {
-      const q = search.toLowerCase().trim();
-      filtered = filtered.filter(
-        (a) =>
-          a.title.toLowerCase().includes(q) ||
-          a.summary.toLowerCase().includes(q) ||
-          a.sourceName.toLowerCase().includes(q)
-      );
-    }
-
-    const total = filtered.length;
-    const paginated = filtered.slice(numOffset, numOffset + numLimit);
-
-    res.json({
-      total,
-      offset: numOffset,
-      limit: numLimit,
-      count: paginated.length,
-      articles: paginated,
-    });
   });
 
-  // 2. GET /api/sources
-  app.get('/api/sources', async (_req: Request, res: Response) => {
-    await ensureFreshForServerless();
-    const categories = Array.from(new Set(store.sources.map((s) => s.category)));
-    res.json({
-      total: store.sources.length,
-      active: store.sources.filter((s) => s.active).length,
-      categories,
-      sources: store.sources,
-    });
+  // 2. GET /api/sources (non-blocking)
+  app.get('/api/sources', (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      ensureStoreLoaded();
+      const categories = Array.from(new Set(store.sources.map((s) => s.category)));
+      res.json({
+        total: store.sources.length,
+        active: store.sources.filter((s) => s.active).length,
+        categories,
+        sources: store.sources,
+      });
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 3. POST /api/sources
-  app.post('/api/sources', (req: Request, res: Response) => {
-    ensureStoreLoaded();
-    const { name, url, category, language = 'en', description } = req.body || {};
-    if (!name || !url || !category) {
-      res.status(400).json({ error: 'Nama, URL RSS, dan Kategori wajib diisi.' });
-      return;
+  app.post('/api/sources', (req: Request, res: Response, next: NextFunction) => {
+    try {
+      ensureStoreLoaded();
+      const { name, url, category, language = 'en', description } = req.body || {};
+      if (!name || !url || !category) {
+        res.status(400).json({ error: 'Nama, URL RSS, dan Kategori wajib diisi.' });
+        return;
+      }
+
+      const id = `src-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const newSource: SourceItem = {
+        id,
+        name: String(name).slice(0, 120),
+        url: String(url).slice(0, 1000),
+        category: String(category),
+        language: String(language),
+        active: true,
+        description: description ? String(description).slice(0, 300) : '',
+        lastStatus: 'PENDING',
+        articleCount: 0,
+      };
+
+      store.sources.push(newSource);
+      saveStore();
+      res.status(201).json({ message: 'Sumber berhasil ditambahkan.', source: newSource });
+    } catch (err) {
+      next(err);
     }
-
-    const id = `src-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const newSource: SourceItem = {
-      id,
-      name: String(name).slice(0, 120),
-      url: String(url).slice(0, 1000),
-      category: String(category),
-      language: String(language),
-      active: true,
-      description: description ? String(description).slice(0, 300) : '',
-      lastStatus: 'PENDING',
-      articleCount: 0,
-    };
-
-    store.sources.push(newSource);
-    saveStore();
-    res.status(201).json({ message: 'Sumber berhasil ditambahkan.', source: newSource });
   });
 
   // 4. PATCH /api/sources/:id/toggle
-  app.patch('/api/sources/:id/toggle', (req: Request, res: Response) => {
-    ensureStoreLoaded();
-    const { id } = req.params;
-    const source = store.sources.find((s) => s.id === id);
-    if (!source) {
-      res.status(404).json({ error: 'Sumber tidak ditemukan.' });
-      return;
+  app.patch('/api/sources/:id/toggle', (req: Request, res: Response, next: NextFunction) => {
+    try {
+      ensureStoreLoaded();
+      const { id } = req.params;
+      const source = store.sources.find((s) => s.id === id);
+      if (!source) {
+        res.status(404).json({ error: 'Sumber tidak ditemukan.' });
+        return;
+      }
+      source.active = !source.active;
+      saveStore();
+      res.json({
+        message: `Sumber ${source.name} sekarang ${source.active ? 'Aktif' : 'Nonaktif'}`,
+        source,
+      });
+    } catch (err) {
+      next(err);
     }
-    source.active = !source.active;
-    saveStore();
-    res.json({
-      message: `Sumber ${source.name} sekarang ${source.active ? 'Aktif' : 'Nonaktif'}`,
-      source,
-    });
   });
 
   // 5. DELETE /api/sources/:id
-  app.delete('/api/sources/:id', (req: Request, res: Response) => {
-    ensureStoreLoaded();
-    const { id } = req.params;
-    const initialLen = store.sources.length;
-    store.sources = store.sources.filter((s) => s.id !== id);
-    if (store.sources.length === initialLen) {
-      res.status(404).json({ error: 'Sumber tidak ditemukan.' });
-      return;
+  app.delete('/api/sources/:id', (req: Request, res: Response, next: NextFunction) => {
+    try {
+      ensureStoreLoaded();
+      const { id } = req.params;
+      const initialLen = store.sources.length;
+      store.sources = store.sources.filter((s) => s.id !== id);
+      if (store.sources.length === initialLen) {
+        res.status(404).json({ error: 'Sumber tidak ditemukan.' });
+        return;
+      }
+      saveStore();
+      res.json({ message: 'Sumber berhasil dihapus.' });
+    } catch (err) {
+      next(err);
     }
-    saveStore();
-    res.json({ message: 'Sumber berhasil dihapus.' });
   });
 
   // 6. GET /api/stats
-  app.get('/api/stats', async (_req: Request, res: Response) => {
-    await ensureFreshForServerless();
-    const totalArticles = store.articles.length;
-    const totalSources = store.sources.length;
-    const activeSources = store.sources.filter((s) => s.active).length;
-    const onlineSources = store.sources.filter((s) => s.active && s.lastStatus === 'ONLINE').length;
+  app.get('/api/stats', async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      await ensureFreshForServerless();
+      const totalArticles = store.articles.length;
+      const totalSources = store.sources.length;
+      const activeSources = store.sources.filter((s) => s.active).length;
+      const onlineSources = store.sources.filter((s) => s.active && s.lastStatus === 'ONLINE').length;
 
-    const categoryCounts: Record<string, number> = {};
-    for (const art of store.articles) {
-      categoryCounts[art.category] = (categoryCounts[art.category] || 0) + 1;
+      const categoryCounts: Record<string, number> = {};
+      for (const art of store.articles) {
+        categoryCounts[art.category] = (categoryCounts[art.category] || 0) + 1;
+      }
+
+      const healthRate = activeSources > 0 ? Math.round((onlineSources / activeSources) * 100) : 100;
+
+      res.json({
+        totalArticles,
+        totalSources,
+        activeSources,
+        onlineSources,
+        healthRate,
+        lastSyncAt: store.lastSyncAt,
+        isSyncing: store.isSyncing,
+        nextSyncMinutes: 30,
+        categoryCounts,
+        recentLog: store.logs[0] || null,
+      });
+    } catch (err) {
+      next(err);
     }
-
-    const healthRate = activeSources > 0 ? Math.round((onlineSources / activeSources) * 100) : 100;
-
-    res.json({
-      totalArticles,
-      totalSources,
-      activeSources,
-      onlineSources,
-      healthRate,
-      lastSyncAt: store.lastSyncAt,
-      isSyncing: store.isSyncing,
-      nextSyncMinutes: 30,
-      categoryCounts,
-      recentLog: store.logs[0] || null,
-    });
   });
 
-  // 7. GET /api/logs
-  app.get('/api/logs', async (_req: Request, res: Response) => {
-    await ensureFreshForServerless();
-    res.json({
-      total: store.logs.length,
-      logs: store.logs,
-    });
+  // 7. GET /api/logs (non-blocking)
+  app.get('/api/logs', (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      ensureStoreLoaded();
+      res.json({
+        total: store.logs.length,
+        logs: store.logs,
+      });
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 8. POST /api/sync
-  app.post('/api/sync', async (_req: Request, res: Response) => {
-    ensureStoreLoaded();
-    if (isServerlessRuntime) {
-      const log = await runIngestionCycle('SERVERLESS_MANUAL_SYNC');
-      res.json({ message: 'Sinkronisasi VEDA selesai.', status: 'COMPLETED', log });
-      return;
-    }
+  app.post('/api/sync', async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      ensureStoreLoaded();
+      if (isServerlessRuntime) {
+        const log = await runIngestionCycle('SERVERLESS_MANUAL_SYNC');
+        res.json({ message: 'Sinkronisasi VEDA selesai.', status: 'COMPLETED', log });
+        return;
+      }
 
-    if (store.isSyncing) {
-      res.json({ message: 'Sinkronisasi sudah dalam proses.', status: 'IN_PROGRESS' });
-      return;
-    }
+      if (store.isSyncing) {
+        res.json({ message: 'Sinkronisasi sudah dalam proses.', status: 'IN_PROGRESS' });
+        return;
+      }
 
-    runIngestionCycle('MANUAL_USER_TRIGGER');
-    res.json({ message: 'Siklus sinkronisasi VEDA telah dimulai di background.', status: 'STARTED' });
+      runIngestionCycle('MANUAL_USER_TRIGGER');
+      res.json({ message: 'Siklus sinkronisasi VEDA telah dimulai di background.', status: 'STARTED' });
+    } catch (err) {
+      next(err);
+    }
   });
 
   // 9. GET /api/opml/export
-  app.get('/api/opml/export', (_req: Request, res: Response) => {
-    ensureStoreLoaded();
-    const outlines = store.sources
-      .map(
-        (s) =>
-          `    <outline text="${escapeXml(s.name)}" title="${escapeXml(s.name)}" type="rss" xmlUrl="${escapeXml(
-            s.url
-          )}" htmlUrl="" category="${escapeXml(s.category)}"/>`
-      )
-      .join('\n');
+  app.get('/api/opml/export', (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      ensureStoreLoaded();
+      const outlines = store.sources
+        .map(
+          (s) =>
+            `    <outline text="${escapeXml(s.name)}" title="${escapeXml(s.name)}" type="rss" xmlUrl="${escapeXml(
+              s.url
+            )}" htmlUrl="" category="${escapeXml(s.category)}"/>`
+        )
+        .join('\n');
 
-    const opml = `<?xml version="1.0" encoding="UTF-8"?>
+      const opml = `<?xml version="1.0" encoding="UTF-8"?>
 <opml version="2.0">
   <head>
     <title>VEDA News Intelligence Feeds</title>
@@ -623,9 +664,12 @@ ${outlines}
   </body>
 </opml>`;
 
-    res.setHeader('Content-Type', 'text/xml');
-    res.setHeader('Content-Disposition', 'attachment; filename="veda_feeds.opml"');
-    res.send(opml);
+      res.setHeader('Content-Type', 'text/xml');
+      res.setHeader('Content-Disposition', 'attachment; filename="veda_feeds.opml"');
+      res.send(opml);
+    } catch (err) {
+      next(err);
+    }
   });
 
   // Ensure unknown /api/* routes always return JSON instead of HTML
@@ -642,6 +686,16 @@ ${outlines}
       });
     });
   }
+
+  // Global JSON error handler so Express never crashes uncaught
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    console.error('[VEDA API ERROR]', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: err?.message || 'Internal Server Error',
+      });
+    }
+  });
 
   return app;
 }

@@ -13,7 +13,7 @@ import { ExecutionLogs } from './components/ExecutionLogs';
 import { ArchitectureDocs } from './components/ArchitectureDocs';
 import { AddSourceModal } from './components/AddSourceModal';
 import { useFirebase } from './components/FirebaseContext';
-import defaultSourcesCatalog from './data/sources.json';
+import { DEFAULT_SOURCES_CATALOG } from './data/sourcesCatalog';
 import {
   ArticleItem,
   SourceItem,
@@ -59,7 +59,7 @@ async function safeFetchJson<T>(url: string, init?: RequestInit): Promise<SafeFe
   }
 }
 
-const FALLBACK_CATALOG_SOURCES: SourceItem[] = (defaultSourcesCatalog as any[]).map((s) => ({
+const FALLBACK_CATALOG_SOURCES: SourceItem[] = DEFAULT_SOURCES_CATALOG.map((s) => ({
   id: String(s.id),
   name: String(s.name),
   url: String(s.url),
