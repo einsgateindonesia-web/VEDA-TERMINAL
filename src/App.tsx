@@ -35,6 +35,7 @@ import {
   Cloud,
   AlertCircle,
 } from 'lucide-react';
+import { Analytics } from '@vercel/analytics/react';
 
 interface SafeFetchResult<T> {
   ok: boolean;
@@ -826,6 +827,9 @@ export default function App() {
         }}
         theme={theme}
       />
+
+      {/* Vercel Web Analytics */}
+      <Analytics />
     </div>
   );
 }
