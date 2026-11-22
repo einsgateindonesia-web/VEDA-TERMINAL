@@ -582,6 +582,13 @@ function escapeXml(unsafe: string) {
 
 // Mount Vite or serve static
 async function startServer() {
+  // Ensure unknown /api/* routes always return JSON instead of HTML
+  app.use('/api', (req: Request, res: Response) => {
+    res.status(404).json({
+      error: `API endpoint not found: ${req.method} ${req.originalUrl}`,
+    });
+  });
+
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({

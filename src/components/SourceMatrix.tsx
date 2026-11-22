@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { SourceItem, ThemeMode } from '../types';
-import { Search, Plus, Download, Power, ExternalLink } from 'lucide-react';
+import { Search, Plus, Download, Power, ExternalLink, Trash2 } from 'lucide-react';
 
 interface SourceMatrixProps {
   sources: SourceItem[];
-  onToggleActive: (id: string) => Promise<void>;
+  onToggleActive: (source: SourceItem) => Promise<void>;
+  onDeleteCustomSource?: (sourceId: string) => Promise<void>;
   onOpenAddModal: () => void;
   onRefresh: () => void;
   theme: ThemeMode;
@@ -13,6 +14,7 @@ interface SourceMatrixProps {
 export const SourceMatrix: React.FC<SourceMatrixProps> = ({
   sources,
   onToggleActive,
+  onDeleteCustomSource,
   onOpenAddModal,
   theme,
 }) => {
@@ -39,14 +41,56 @@ export const SourceMatrix: React.FC<SourceMatrixProps> = ({
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
-  const totalActive = sources.filter((s) => s.active).length;
   const totalOnline = sources.filter((s) => s.active && s.lastStatus === 'ONLINE').length;
 
   const panelBg = isDark ? 'bg-black border-white/20 text-white' : 'bg-white border-black/20 text-black shadow-sm';
-  const inputBg = isDark ? 'bg-neutral-950 border-white/20 text-white placeholder-white/40 focus:border-white' : 'bg-neutral-50 border-black/20 text-black placeholder-black/40 focus:border-black';
+  const inputBg = isDark
+    ? 'bg-neutral-950 border-white/20 text-white placeholder-white/40 focus:border-white'
+    : 'bg-neutral-50 border-black/20 text-black placeholder-black/40 focus:border-black';
   const headerBg = isDark ? 'bg-neutral-950 border-white/20 text-white/60' : 'bg-neutral-100 border-black/20 text-black/60';
   const divider = isDark ? 'divide-white/10' : 'divide-black/10';
   const hoverRow = isDark ? 'hover:bg-neutral-950' : 'hover:bg-neutral-50';
+
+  const handleExportOpml = () => {
+    const escapeXml = (unsafe: string) =>
+      unsafe.replace(/[<>&'"]/g, (c) => {
+        switch (c) {
+          case '<':
+            return '&lt;';
+          case '>':
+            return '&gt;';
+          case '&':
+            return '&amp;';
+          case "'":
+            return '&apos;';
+          case '"':
+            return '&quot;';
+          default:
+            return c;
+        }
+      });
+
+    const outlines = sources
+      .map(
+        (s) =>
+          `    <outline text="${escapeXml(s.name)}" title="${escapeXml(s.name)}" type="rss" xmlUrl="${escapeXml(
+            s.url
+          )}" htmlUrl="" category="${escapeXml(s.category)}"/>`
+      )
+      .join('\n');
+
+    const opml = `<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0">\n  <head>\n    <title>VEDA News Intelligence Feeds</title>\n    <dateCreated>${new Date().toUTCString()}</dateCreated>\n    <docs>http://opml.org/spec2.opml</docs>\n  </head>\n  <body>\n${outlines}\n  </body>\n</opml>`;
+
+    const blob = new Blob([opml], { type: 'text/xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'veda_feeds.opml';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-4 font-mono text-xs">
@@ -74,9 +118,9 @@ export const SourceMatrix: React.FC<SourceMatrixProps> = ({
             <span>[ + REGISTER RSS NODE ]</span>
           </button>
 
-          <a
-            href="/api/opml/export"
-            download="veda_feeds.opml"
+          <button
+            type="button"
+            onClick={handleExportOpml}
             className={`px-3 py-2 border flex items-center gap-1.5 transition-colors cursor-pointer ${
               isDark ? 'bg-black border-white/30 hover:border-white text-white' : 'bg-white border-black/30 hover:border-black text-black'
             }`}
@@ -84,13 +128,12 @@ export const SourceMatrix: React.FC<SourceMatrixProps> = ({
           >
             <Download className="w-3.5 h-3.5" />
             <span>[ EXPORT OPML ]</span>
-          </a>
+          </button>
         </div>
       </div>
 
       {/* Category & Status Filter Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-        {/* Category Segmented Buttons */}
         <div className="flex items-center gap-1 overflow-x-auto pb-1 max-w-full">
           {categories.map((cat) => (
             <button
@@ -111,15 +154,18 @@ export const SourceMatrix: React.FC<SourceMatrixProps> = ({
           ))}
         </div>
 
-        {/* Status Filter */}
         <div className="flex items-center gap-1.5 shrink-0">
           <span className={`text-[10px] ${isDark ? 'text-white/50' : 'text-black/50'}`}>FILTER:</span>
           <button
             onClick={() => setStatusFilter('all')}
             className={`px-2 py-1 text-[11px] border cursor-pointer ${
               statusFilter === 'all'
-                ? isDark ? 'bg-white text-black font-bold border-white' : 'bg-black text-white font-bold border-black'
-                : isDark ? 'border-white/20 text-white/60' : 'border-black/20 text-black/60'
+                ? isDark
+                  ? 'bg-white text-black font-bold border-white'
+                  : 'bg-black text-white font-bold border-black'
+                : isDark
+                ? 'border-white/20 text-white/60'
+                : 'border-black/20 text-black/60'
             }`}
           >
             ALL ({sources.length})
@@ -128,8 +174,12 @@ export const SourceMatrix: React.FC<SourceMatrixProps> = ({
             onClick={() => setStatusFilter('ONLINE')}
             className={`px-2 py-1 text-[11px] border cursor-pointer ${
               statusFilter === 'ONLINE'
-                ? isDark ? 'bg-white text-black font-bold border-white' : 'bg-black text-white font-bold border-black'
-                : isDark ? 'border-white/20 text-white/60' : 'border-black/20 text-black/60'
+                ? isDark
+                  ? 'bg-white text-black font-bold border-white'
+                  : 'bg-black text-white font-bold border-black'
+                : isDark
+                ? 'border-white/20 text-white/60'
+                : 'border-black/20 text-black/60'
             }`}
           >
             ONLINE ({totalOnline})
@@ -138,8 +188,12 @@ export const SourceMatrix: React.FC<SourceMatrixProps> = ({
             onClick={() => setStatusFilter('ERROR')}
             className={`px-2 py-1 text-[11px] border cursor-pointer ${
               statusFilter === 'ERROR'
-                ? isDark ? 'bg-white text-black font-bold border-white' : 'bg-black text-white font-bold border-black'
-                : isDark ? 'border-white/20 text-white/60' : 'border-black/20 text-black/60'
+                ? isDark
+                  ? 'bg-white text-black font-bold border-white'
+                  : 'bg-black text-white font-bold border-black'
+                : isDark
+                ? 'border-white/20 text-white/60'
+                : 'border-black/20 text-black/60'
             }`}
           >
             ERR ({sources.filter((s) => s.lastStatus === 'ERROR').length})
@@ -171,14 +225,16 @@ export const SourceMatrix: React.FC<SourceMatrixProps> = ({
                 </tr>
               ) : (
                 filtered.map((src) => (
-                  <tr
-                    key={src.id}
-                    className={`transition-colors ${hoverRow} ${
-                      !src.active ? 'opacity-30' : ''
-                    }`}
-                  >
+                  <tr key={src.id} className={`transition-colors ${hoverRow} ${!src.active ? 'opacity-30' : ''}`}>
                     <td className="py-3 px-4">
-                      <div className={`font-bold font-sans text-sm ${isDark ? 'text-white' : 'text-black'}`}>{src.name}</div>
+                      <div className="flex items-center gap-2">
+                        <span className={`font-bold font-sans text-sm ${isDark ? 'text-white' : 'text-black'}`}>
+                          {src.name}
+                        </span>
+                        {src.isCloudCustom && (
+                          <span className={`text-[10px] font-mono opacity-70`}>[ CLOUD ]</span>
+                        )}
+                      </div>
                       <div className={`text-[10px] truncate max-w-[260px] ${isDark ? 'text-white/40' : 'text-black/50'}`}>
                         {src.description || src.id}
                       </div>
@@ -198,13 +254,17 @@ export const SourceMatrix: React.FC<SourceMatrixProps> = ({
                           <>
                             <span className="font-bold">[ ONLINE ]</span>
                             {src.latencyMs ? (
-                              <span className={`tabular-nums ${isDark ? 'text-white/40' : 'text-black/40'}`}>({src.latencyMs}ms)</span>
+                              <span className={`tabular-nums ${isDark ? 'text-white/40' : 'text-black/40'}`}>
+                                ({src.latencyMs}ms)
+                              </span>
                             ) : null}
                           </>
                         ) : src.lastStatus === 'ERROR' ? (
-                          <span className={`font-bold border px-1 text-[10px] ${
-                            isDark ? 'text-white/80 border-white/40' : 'text-black/80 border-black/40'
-                          }`}>
+                          <span
+                            className={`font-bold border px-1 text-[10px] ${
+                              isDark ? 'text-white/80 border-white/40' : 'text-black/80 border-black/40'
+                            }`}
+                          >
                             [ ERROR ]
                           </span>
                         ) : (
@@ -223,17 +283,36 @@ export const SourceMatrix: React.FC<SourceMatrixProps> = ({
                     </td>
 
                     <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={() => onToggleActive(src.id)}
-                        className={`p-1.5 border transition-colors cursor-pointer ${
-                          src.active
-                            ? isDark ? 'bg-white text-black border-white' : 'bg-black text-white border-black'
-                            : isDark ? 'border-white/20 text-white/40 hover:text-white hover:border-white' : 'border-black/20 text-black/40 hover:text-black hover:border-black'
-                        }`}
-                        title={src.active ? 'Disable Feed' : 'Enable Feed'}
-                      >
-                        <Power className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          onClick={() => onToggleActive(src)}
+                          className={`p-1.5 border transition-colors cursor-pointer ${
+                            src.active
+                              ? isDark
+                                ? 'bg-white text-black border-white'
+                                : 'bg-black text-white border-black'
+                              : isDark
+                              ? 'border-white/20 text-white/40 hover:text-white hover:border-white'
+                              : 'border-black/20 text-black/40 hover:text-black hover:border-black'
+                          }`}
+                          title={src.active ? 'Disable Feed' : 'Enable Feed'}
+                        >
+                          <Power className="w-3.5 h-3.5" />
+                        </button>
+                        {src.isCloudCustom && onDeleteCustomSource && (
+                          <button
+                            onClick={() => onDeleteCustomSource(src.id)}
+                            className={`p-1.5 border transition-colors cursor-pointer ${
+                              isDark
+                                ? 'border-white/20 text-white/60 hover:text-white hover:border-white'
+                                : 'border-black/20 text-black/60 hover:text-black hover:border-black'
+                            }`}
+                            title="Remove Cloud Custom Feed"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     <td className="py-3 px-4 text-right">
@@ -241,7 +320,9 @@ export const SourceMatrix: React.FC<SourceMatrixProps> = ({
                         href={src.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`inline-flex items-center gap-1 hover:underline ${isDark ? 'text-white/80 hover:text-white' : 'text-black/80 hover:text-black'}`}
+                        className={`inline-flex items-center gap-1 hover:underline ${
+                          isDark ? 'text-white/80 hover:text-white' : 'text-black/80 hover:text-black'
+                        }`}
                         title={src.url}
                       >
                         <span className="truncate max-w-[130px]">{src.url.replace(/^https?:\/\//, '')}</span>

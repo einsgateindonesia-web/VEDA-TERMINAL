@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ThemeMode } from '../types';
-import { X, Plus, AlertCircle } from 'lucide-react';
+import { X, Plus, AlertCircle, Cloud } from 'lucide-react';
+import { useFirebase } from './FirebaseContext';
 
 interface AddSourceModalProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
   onSourceAdded,
   theme,
 }) => {
+  const { user, addCustomSourceInFirestore } = useFirebase();
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [category, setCategory] = useState('technology');
@@ -31,30 +33,68 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
     e.preventDefault();
     setError(null);
 
-    if (!name.trim() || !url.trim()) {
+    const trimmedName = name.trim().slice(0, 120);
+    const trimmedUrl = url.trim().slice(0, 1000);
+    const trimmedDesc = description.trim().slice(0, 300);
+
+    if (!trimmedName || !trimmedUrl) {
       setError('Nama dan URL RSS wajib diisi.');
+      return;
+    }
+
+    if (!/^https?:\/\/.+/.test(trimmedUrl)) {
+      setError('URL RSS harus dimulai dengan http:// atau https://');
       return;
     }
 
     try {
       setLoading(true);
-      const res = await fetch('/api/sources', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          url: url.trim(),
+      let savedToCloud = false;
+
+      if (user) {
+        await addCustomSourceInFirestore({
+          name: trimmedName,
+          url: trimmedUrl,
           category,
           language,
-          description: description.trim(),
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Gagal menambahkan sumber RSS.');
+          description: trimmedDesc,
+        });
+        savedToCloud = true;
       }
 
+      // Also register with Express RSS aggregator backend if online
+      try {
+        const res = await fetch('/api/sources', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: trimmedName,
+            url: trimmedUrl,
+            category,
+            language,
+            description: trimmedDesc,
+          }),
+        });
+
+        const contentType = res.headers.get('content-type') || '';
+        if (!res.ok) {
+          if (!savedToCloud) {
+            if (contentType.includes('application/json')) {
+              const data = await res.json();
+              throw new Error(data.error || 'Gagal menambahkan sumber RSS.');
+            }
+            throw new Error(`Backend mengembalikan HTTP ${res.status}.`);
+          }
+        }
+      } catch (backendErr: any) {
+        if (!savedToCloud) {
+          throw backendErr;
+        }
+      }
+
+      setName('');
+      setUrl('');
+      setDescription('');
       onSourceAdded();
       onClose();
     } catch (err: any) {
@@ -76,7 +116,7 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm font-mono">
-      <div 
+      <div
         className={`border rounded-none max-w-lg w-full p-6 ${modalBg}`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -92,10 +132,23 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
           </button>
         </div>
 
+        {user && (
+          <div
+            className={`mt-3 px-3 py-2 border text-[11px] flex items-center gap-2 ${
+              isDark ? 'border-white/20 bg-neutral-950 text-white/80' : 'border-black/20 bg-neutral-100 text-black/80'
+            }`}
+          >
+            <Cloud className="w-3.5 h-3.5 shrink-0" />
+            <span>[ FIREBASE SYNC ACTIVE: NODE DISIMPAN KE PROFIL OPERATOR ]</span>
+          </div>
+        )}
+
         {error && (
-          <div className={`mt-4 p-3 border text-xs flex items-center gap-2 ${
-            isDark ? 'bg-neutral-950 border-white/40 text-white' : 'bg-neutral-100 border-black/40 text-black'
-          }`}>
+          <div
+            className={`mt-4 p-3 border text-xs flex items-center gap-2 ${
+              isDark ? 'bg-neutral-950 border-white/40 text-white' : 'bg-neutral-100 border-black/40 text-black'
+            }`}
+          >
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
@@ -107,6 +160,7 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
             <input
               type="text"
               required
+              maxLength={120}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. NHK World, Wired, Detikcom..."
@@ -119,6 +173,7 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
             <input
               type="url"
               required
+              maxLength={1000}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://example.com/rss.xml"
@@ -161,6 +216,7 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
             <label className="block opacity-70 mb-1">[ NODE REMARKS (OPTIONAL) ]</label>
             <input
               type="text"
+              maxLength={300}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Operational notes..."

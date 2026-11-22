@@ -25,6 +25,7 @@ export interface SourceItem {
   lastError?: string;
   latencyMs?: number;
   articleCount?: number;
+  isCloudCustom?: boolean;
 }
 
 export interface FetchLog {

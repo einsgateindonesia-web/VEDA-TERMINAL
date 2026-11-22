@@ -1,6 +1,7 @@
 import React from 'react';
 import { ViewTab, ThemeMode } from '../types';
-import { RefreshCw, Sun, Moon } from 'lucide-react';
+import { RefreshCw, Sun, Moon, LogIn, LogOut, ShieldCheck } from 'lucide-react';
+import { useFirebase } from './FirebaseContext';
 
 interface TopBarProps {
   currentTab: ViewTab;
@@ -21,6 +22,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   theme,
   onToggleTheme,
 }) => {
+  const { user, authReady, authLoading, userProfile, signInWithGoogle, logout } = useFirebase();
+
   const formatCountdown = (totalSec: number) => {
     const mins = Math.floor(totalSec / 60);
     const secs = totalSec % 60;
@@ -29,35 +32,63 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   const isDark = theme === 'dark';
 
+  const operatorLabel = (
+    userProfile?.displayName ||
+    user?.displayName ||
+    user?.email?.split('@')[0] ||
+    'OPERATOR'
+  )
+    .toUpperCase()
+    .slice(0, 14);
+
   return (
-    <header className="sticky top-0 z-40 bg-black/95 dark:bg-black/95 light:bg-white/95 backdrop-blur-md border-b border-white/20 dark:border-white/20 light:border-black/20 transition-colors">
-      <div className="max-w-[1520px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-6">
-        
+    <header
+      className={`sticky top-0 z-40 backdrop-blur-md border-b transition-colors ${
+        isDark ? 'bg-black/95 border-white/20' : 'bg-white/95 border-black/20'
+      }`}
+    >
+      <div className="max-w-[1520px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* Zone 1: VEDA Anime Wordmark */}
         <div className="flex items-center gap-3 whitespace-nowrap shrink-0">
-          <div className="w-8 h-8 rounded-none border border-white dark:border-white light:border-black flex items-center justify-center bg-black dark:bg-black light:bg-white text-white dark:text-white light:text-black font-mono font-bold text-sm tracking-wider shadow-sm transition-colors">
+          <div
+            className={`w-8 h-8 rounded-none border flex items-center justify-center font-mono font-bold text-sm tracking-wider shadow-sm transition-colors ${
+              isDark ? 'border-white bg-black text-white' : 'border-black bg-white text-black'
+            }`}
+          >
             V
           </div>
           <button
             onClick={() => onTabChange('feed')}
             className="text-left group cursor-pointer focus:outline-none"
           >
-            <div className="text-base sm:text-lg font-bold tracking-widest text-white dark:text-white light:text-black font-mono uppercase transition-colors">
+            <div
+              className={`text-base sm:text-lg font-bold tracking-widest font-mono uppercase transition-colors ${
+                isDark ? 'text-white' : 'text-black'
+              }`}
+            >
               VEDA <span className="opacity-40">//</span> TERMINAL
             </div>
-            <div className="text-[10px] font-mono tracking-widest text-white/60 dark:text-white/60 light:text-black/60 flex items-center gap-1.5 -mt-0.5 transition-colors">
+            <div
+              className={`text-[10px] font-mono tracking-widest flex items-center gap-1.5 -mt-0.5 transition-colors ${
+                isDark ? 'text-white/60' : 'text-black/60'
+              }`}
+            >
               <span>CB-MAINFRAME-2307</span>
-              <span className="inline-block w-1.5 h-2.5 bg-white dark:bg-white light:bg-black animate-cursor-blink"></span>
+              <span
+                className={`inline-block w-1.5 h-2.5 animate-cursor-blink ${
+                  isDark ? 'bg-white' : 'bg-black'
+                }`}
+              ></span>
               <span className="hidden sm:inline opacity-40">[LVL.7]</span>
             </div>
           </button>
         </div>
 
         {/* Zone 2: 4 clean single-line navigation links */}
-        <nav className="hidden md:flex items-center gap-2 text-xs font-mono tracking-wider">
+        <nav className="hidden lg:flex items-center gap-1.5 text-xs font-mono tracking-wider">
           <button
             onClick={() => onTabChange('feed')}
-            className={`whitespace-nowrap shrink-0 transition-all py-1.5 px-3 border cursor-pointer ${
+            className={`whitespace-nowrap shrink-0 transition-all py-1.5 px-2.5 border cursor-pointer ${
               currentTab === 'feed'
                 ? isDark
                   ? 'bg-white text-black font-bold border-white'
@@ -71,7 +102,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
           <button
             onClick={() => onTabChange('sources')}
-            className={`whitespace-nowrap shrink-0 transition-all py-1.5 px-3 border cursor-pointer ${
+            className={`whitespace-nowrap shrink-0 transition-all py-1.5 px-2.5 border cursor-pointer ${
               currentTab === 'sources'
                 ? isDark
                   ? 'bg-white text-black font-bold border-white'
@@ -85,7 +116,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
           <button
             onClick={() => onTabChange('logs')}
-            className={`whitespace-nowrap shrink-0 transition-all py-1.5 px-3 border cursor-pointer ${
+            className={`whitespace-nowrap shrink-0 transition-all py-1.5 px-2.5 border cursor-pointer ${
               currentTab === 'logs'
                 ? isDark
                   ? 'bg-white text-black font-bold border-white'
@@ -99,7 +130,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
           <button
             onClick={() => onTabChange('architecture')}
-            className={`whitespace-nowrap shrink-0 transition-all py-1.5 px-3 border cursor-pointer ${
+            className={`whitespace-nowrap shrink-0 transition-all py-1.5 px-2.5 border cursor-pointer ${
               currentTab === 'architecture'
                 ? isDark
                   ? 'bg-white text-black font-bold border-white'
@@ -109,12 +140,44 @@ export const TopBar: React.FC<TopBarProps> = ({
                 : 'text-black/70 hover:text-black border-transparent hover:border-black/30'
             }`}
           >
-            [ SPECS & CLI ]
+            [ SPECS &amp; CLI ]
           </button>
         </nav>
 
-        {/* Zone 3: Countdown + Scan Now + Theme Switch */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Zone 3: Operator Auth + Theme + Countdown + Scan Now */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {authReady && (
+            user ? (
+              <button
+                onClick={logout}
+                className={`px-2.5 py-1.5 text-xs font-mono font-bold border transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                  isDark
+                    ? 'bg-black text-white border-white/40 hover:border-white'
+                    : 'bg-white text-black border-black/40 hover:border-black'
+                }`}
+                title={`Signed in as ${user.email || operatorLabel} (${userProfile?.role?.toUpperCase() || 'OPERATOR'}) — Click to Sign Out`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden xl:inline">{operatorLabel}</span>
+                <LogOut className="w-3 h-3 opacity-70" />
+              </button>
+            ) : (
+              <button
+                onClick={signInWithGoogle}
+                disabled={authLoading}
+                className={`px-2.5 py-1.5 text-xs font-mono font-bold border transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                  isDark
+                    ? 'bg-black text-white border-white/40 hover:border-white hover:bg-white hover:text-black'
+                    : 'bg-white text-black border-black/40 hover:border-black hover:bg-black hover:text-white'
+                }`}
+                title="Sign in with Google to sync bookmarks, custom feeds & preferences to Firebase"
+              >
+                <LogIn className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">{authLoading ? 'AUTH...' : '[ SYNC LOGIN ]'}</span>
+              </button>
+            )
+          )}
+
           {/* Mode Switch Button */}
           <button
             onClick={onToggleTheme}
@@ -154,49 +217,66 @@ export const TopBar: React.FC<TopBarProps> = ({
             <span>{isSyncing ? 'SCANNING...' : 'SCAN NOW'}</span>
           </button>
         </div>
-
       </div>
 
-      {/* Mobile nav drawer */}
-      <div className={`md:hidden flex items-center justify-around border-t px-2 py-1.5 text-xs font-mono ${
-        isDark ? 'border-white/10 bg-black' : 'border-black/10 bg-white'
-      }`}>
+      {/* Mobile / tablet nav drawer */}
+      <div
+        className={`lg:hidden flex items-center justify-around border-t px-2 py-1.5 text-xs font-mono ${
+          isDark ? 'border-white/10 bg-black' : 'border-black/10 bg-white'
+        }`}
+      >
         <button
           onClick={() => onTabChange('feed')}
-          className={`px-2 py-1 ${
+          className={`px-2 py-1 cursor-pointer ${
             currentTab === 'feed'
-              ? isDark ? 'bg-white text-black font-bold' : 'bg-black text-white font-bold'
-              : isDark ? 'text-white/70' : 'text-black/70'
+              ? isDark
+                ? 'bg-white text-black font-bold'
+                : 'bg-black text-white font-bold'
+              : isDark
+              ? 'text-white/70'
+              : 'text-black/70'
           }`}
         >
           FEED
         </button>
         <button
           onClick={() => onTabChange('sources')}
-          className={`px-2 py-1 ${
+          className={`px-2 py-1 cursor-pointer ${
             currentTab === 'sources'
-              ? isDark ? 'bg-white text-black font-bold' : 'bg-black text-white font-bold'
-              : isDark ? 'text-white/70' : 'text-black/70'
+              ? isDark
+                ? 'bg-white text-black font-bold'
+                : 'bg-black text-white font-bold'
+              : isDark
+              ? 'text-white/70'
+              : 'text-black/70'
           }`}
         >
           SOURCES
         </button>
         <button
           onClick={() => onTabChange('logs')}
-          className={`px-2 py-1 ${
+          className={`px-2 py-1 cursor-pointer ${
             currentTab === 'logs'
-              ? isDark ? 'bg-white text-black font-bold' : 'bg-black text-white font-bold'
-              : isDark ? 'text-white/70' : 'text-black/70'
+              ? isDark
+                ? 'bg-white text-black font-bold'
+                : 'bg-black text-white font-bold'
+              : isDark
+              ? 'text-white/70'
+              : 'text-black/70'
           }`}
         >
           LOGS
         </button>
         <button
           onClick={() => onTabChange('architecture')}
-          className={`px-2 py-1 ${
+          className={`px-2 py-1 cursor-pointer ${
             currentTab === 'architecture'
-              ? isDark ? 'bg-white text-black font-bold' : 'bg-black text-white font-bold'
-              : isDark ? 'text-white/70' : 'text-black/70'
+              ? isDark
+                ? 'bg-white text-black font-bold'
+                : 'bg-black text-white font-bold'
+              : isDark
+              ? 'text-white/70'
+              : 'text-black/70'
           }`}
         >
           DOCS
