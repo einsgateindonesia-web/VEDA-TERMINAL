@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --font-display: 'Rajdhani', sans-serif;
+  }
+
+  html.dark body {
+    font-family: var(--font-sans);
+    background-color: #000000;
+    color: #e5e5e5;
+  }
+
+  html.light body {
+    font-family: var(--font-sans);
+    background-color: #fafafa;
+    color: #0a0a0a;
+  }
+}
+
+.font-display {
+  font-family: 'Rajdhani', sans-serif;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* VEDA Anime Grid - Dark Mode */
+html.dark .bg-veda-bw-grid {
+  background-color: #000000;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* VEDA Anime Grid - Light Mode (Blueprint / Research Lab) */
+html.light .bg-veda-bw-grid {
+  background-color: #fafafa;
+  background-image: 
+    linear-gradient(to right, rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Scanlines */
+html.dark .bg-veda-scanlines {
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.015) 0px,
+    rgba(255, 255, 255, 0.015) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+}
+
+html.light .bg-veda-scanlines {
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.02) 0px,
+    rgba(0, 0, 0, 0.02) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+}
+
+/* Scrollbars */
+html.dark ::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+html.dark ::-webkit-scrollbar-track {
+  background: #000000;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #262626;
+  border-radius: 0px;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #ffffff;
+}
+
+html.light ::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+html.light ::-webkit-scrollbar-track {
+  background: #f4f4f5;
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: #a1a1aa;
+  border-radius: 0px;
+}
+
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #000000;
+}
+
+/* Blinking terminal cursor */
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+.animate-cursor-blink {
+  animation: blink 1s infinite;
+}
