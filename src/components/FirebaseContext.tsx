@@ -291,6 +291,11 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const code = err?.code || '';
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
         setAuthError(null);
+      } else if (code === 'auth/unauthorized-domain') {
+        const host = typeof window !== 'undefined' ? window.location.hostname : 'domain ini';
+        setAuthError(
+          `Domain "${host}" belum terdaftar di Firebase Console > Authentication > Settings > Authorized domains.`
+        );
       } else {
         setAuthError(err?.message || 'Gagal autentikasi dengan Google.');
       }
